@@ -49,26 +49,26 @@ class Trainer(object):
 
     def train(self):
         """训练"""
-        train_sampler = RandomSampler(self.train_dataset)
-        train_dataloader = DataLoader(self.train_dataset, sampler=train_sampler, batch_size=self.args.train_batch_size)
+        train_sampler = RandomSampler(self.train_dataset) # 随机采样器 当做参数传入DataLoader
+        train_dataloader = DataLoader(self.train_dataset, sampler=train_sampler, batch_size=self.args.train_batch_size) # 数据加载器 shuffle为True时，sampler是RandomSampler， 就是按随机取样
 
-        if self.args.max_steps > 0:
+        if self.args.max_steps > 0:  # 限制了训练步数的话
             t_total = self.args.max_steps
             self.args.num_train_epochs = self.args.max_steps // (
                     len(train_dataloader) // self.args.gradient_accumulation_steps) + 1
-        else:
-            t_total = len(train_dataloader) // self.args.gradient_accumulation_steps * self.args.num_train_epochs
+        else:  # 没有限制训练步数的话，按照epoch来计算总的训练步数t_total
+            t_total = len(train_dataloader) // self.args.gradient_accumulation_steps * self.args.num_train_epochs  #gradient_accumulation_steps=1是 一步一反向更新梯度
 
         # 设置optimizer、linear warmup、decay
         no_decay = ['bias', 'LayerNorm.weight']
         optimizer_grouped_parameters = [
-            {'params': [p for n, p in self.model.named_parameters() if not any(nd in n for nd in no_decay)],
+            {'params': [p for n, p in self.model.named_parameters() if not any(nd in n for nd in no_decay)],# 除了bias和LayerNorm.weight的参数
              'weight_decay': self.args.weight_decay},
-            {'params': [p for n, p in self.model.named_parameters() if any(nd in n for nd in no_decay)],
+            {'params': [p for n, p in self.model.named_parameters() if any(nd in n for nd in no_decay)], # bias和LayerNorm.weight的参数
              'weight_decay': 0.0}
         ]
-        optimizer = AdamW(optimizer_grouped_parameters, lr=self.args.learning_rate, eps=self.args.adam_epsilon)
-        scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=self.args.warmup_steps,
+        optimizer = AdamW(optimizer_grouped_parameters, lr=self.args.learning_rate, eps=self.args.adam_epsilon) # AdamW优化器
+        scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=self.args.warmup_steps, # 线性warmup self.args.warmup_steps=0
                                                     num_training_steps=t_total)
 
         logger.info("***** Running training *****")
@@ -84,7 +84,7 @@ class Trainer(object):
         tr_loss = 0.0
         self.model.zero_grad()
 
-        train_iterator = trange(int(self.args.num_train_epochs), desc="Epoch")
+        train_iterator = trange(int(self.args.num_train_epochs), desc="Epoch")# 迭代器trange=tqdm(range())
 
         for _ in train_iterator:
             epoch_iterator = tqdm(train_dataloader, desc="Iteration")

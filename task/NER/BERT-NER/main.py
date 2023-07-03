@@ -12,7 +12,7 @@ def main(args):
 
     train_dataset = load_and_cache_examples(args, tokenizer, mode="train")  # 加载数据集
     dev_dataset = load_and_cache_examples(args, tokenizer, mode="dev")  # 加载验证集
-    trainer = Trainer(args, train_dataset, dev_dataset)
+    trainer = Trainer(args, train_dataset, dev_dataset)  # 初始化自建类Trainer def __init__(self, args, train_dataset=None, dev_dataset=None):
     # 训练模型
     if args.do_train:
         trainer.train()
@@ -41,11 +41,11 @@ if __name__ == '__main__':
                         help="Total number of training epochs to perform.")
     parser.add_argument("--weight_decay", default=0.0, type=float, help="Weight decay if we apply some.")
     parser.add_argument('--gradient_accumulation_steps', type=int, default=1,
-                        help="Number of updates steps to accumulate before performing a backward/update pass.")
+                        help="Number of updates steps to accumulate before performing a backward/update pass.") #在执行后向/更新传递之前，要积累的更新步骤的数量
     parser.add_argument("--adam_epsilon", default=1e-8, type=float, help="Epsilon for Adam optimizer.")
     parser.add_argument("--max_grad_norm", default=1.0, type=float, help="Max gradient norm.")
     parser.add_argument("--max_steps", default=-1, type=int,
-                        help="If > 0: set total number of training steps to perform. Override num_train_epochs.")
+                        help="If > 0: set total number of training steps to perform. Override num_train_epochs.")  #设置要执行的训练步骤总数。覆盖num_train_epochs
     parser.add_argument("--warmup_steps", default=0, type=int, help="Linear warmup over warmup_steps.")
     parser.add_argument("--dropout_rate", default=0.1, type=float, help="Dropout for fully-connected layers")
 
