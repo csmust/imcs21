@@ -131,6 +131,8 @@ def convert_examples_to_features(examples, max_seq_len, tokenizer,
             word_tokens = tokenizer.tokenize(word)    # 一个字一个字的读，一个字一个字的分词！！！！！！！！！！！！！！！！！
             if not word_tokens:
                 word_tokens = [unk_token]  # 处理UNK的token
+            if len(word_tokens) > 1:
+                logger.info("Word split into subwords: %s" % " ".join(word_tokens))
             tokens.extend(word_tokens)      #   extend() 函数用于在列表末尾一次性追加另一个序列中的多个值
             # 对于token的第一个标记使用真实的标签id，其余标记使用pad   ；   token可能被分成多个词，所以标签也要对应
             seq_labels_ids.extend([int(seq_label)] + [pad_token_label_id] * (len(word_tokens) - 1))
