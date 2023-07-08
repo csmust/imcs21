@@ -1,7 +1,10 @@
-from transformers.configuration_bert import BertConfig
+from transformers import BertConfig
 from transformers import BertPreTrainedModel
-from transformers.modeling_bert import BertEmbeddings, BertEncoder, BertPooler, BertLayer, BaseModelOutput, BaseModelOutputWithPooling
-from transformers.modeling_bert import BERT_INPUTS_DOCSTRING, _TOKENIZER_FOR_DOC, _CONFIG_FOR_DOC
+from transformers.models.bert.modeling_bert import BertEmbeddings, BertEncoder, BertPooler, BertLayer
+from transformers.modeling_outputs import BaseModelOutput, BaseModelOutputWithPooling
+from transformers.models.bert.modeling_bert import BERT_INPUTS_DOCSTRING
+_TOKENIZER_FOR_DOC="BertConfig"
+_CONFIG_FOR_DOC="BertConfig"
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -18,9 +21,10 @@ from torch.nn import CrossEntropyLoss, MSELoss
 
 from transformers.file_utils import (
     add_code_sample_docstrings,
-    add_start_docstrings_to_callable,
+    add_start_docstrings_to_model_forward  # add_start_docstrings_to_callable
 )
 
+# from transformers import add_start_docstrings_to_callable
 
 class WordEmbeddingAdapter(nn.Module):
     
@@ -112,9 +116,9 @@ class LEBertModel(BertPreTrainedModel):
         for layer, heads in heads_to_prune.items():
             self.encoder.layer[layer].attention.prune_heads(heads)
 
-    @add_start_docstrings_to_callable(BERT_INPUTS_DOCSTRING.format("(batch_size, sequence_length)"))
+    @add_start_docstrings_to_model_forward(BERT_INPUTS_DOCSTRING.format("(batch_size, sequence_length)"))
     @add_code_sample_docstrings(
-        tokenizer_class=_TOKENIZER_FOR_DOC,
+        processor_class=_TOKENIZER_FOR_DOC,
         checkpoint="bert-base-uncased",
         output_type=BaseModelOutputWithPooling,
         config_class=_CONFIG_FOR_DOC,
@@ -268,7 +272,7 @@ class BertEncoder(nn.Module):
                     head_mask[i],
                     encoder_hidden_states,
                     encoder_attention_mask,
-                    output_attentions,
+                    output_attentions=output_attentions,
                 )
             hidden_states = layer_outputs[0]
             if output_attentions:

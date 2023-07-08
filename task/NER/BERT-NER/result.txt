@@ -1,0 +1,5 @@
+(clb2) root@autodl-container-cab011ade2-5edc3cc2:~/autodl-fs/imcs21/task/NER# python eval_ner.py --gold_path ../../dataset/test.json --pred_path BERT-NER/pred_bert.json
+-------------------- entity-level metric (f1 score) --------------------
+SX: 0.9054      DN: 0.8967      DC: 0.9057      EX: 0.91        OP: 0.9415      Overall: 0.9066
+-------------------- token-level metric --------------------
+P: 0.8877       R: 0.9212       F: 0.9042

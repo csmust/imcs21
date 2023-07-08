@@ -111,18 +111,18 @@ def evaluate(config, model, data_iter, test=False):
     predict_all = np.array([], dtype=int)
     labels_all = np.array([], dtype=int)
     with torch.no_grad():
-        for texts, labels in data_iter:
+        for texts, labels in data_iter:   #调用__next__调用_to_tensor函数 return (x, seq_len, mask), y
             outputs = model(texts)
             loss = F.cross_entropy(outputs, labels)
             loss_total += loss
-            labels = labels.data.cpu().numpy()
-            predic = torch.max(outputs.data, 1)[1].cpu().numpy()
-            labels_all = np.append(labels_all, labels)
-            predict_all = np.append(predict_all, predic)
-    p = metrics.precision_score(labels_all, predict_all, average='macro')
-    r = metrics.recall_score(labels_all, predict_all, average='macro')
-    f1 = metrics.f1_score(labels_all, predict_all, average='macro')
-    acc = metrics.accuracy_score(labels_all, predict_all)
+            labels = labels.data.cpu().numpy()              #tensor转为numpy
+            predic = torch.max(outputs.data, 1)[1].cpu().numpy() #tensor转为numpy
+            labels_all = np.append(labels_all, labels) #将labels添加到labels_all中
+            predict_all = np.append(predict_all, predic) #将predic添加到predict_all中
+    p = metrics.precision_score(labels_all, predict_all, average='macro') #计算精确率
+    r = metrics.recall_score(labels_all, predict_all, average='macro') #计算召回率
+    f1 = metrics.f1_score(labels_all, predict_all, average='macro') #计算f1
+    acc = metrics.accuracy_score(labels_all, predict_all) #计算准确率
     if test:
         report = metrics.classification_report(labels_all, predict_all, target_names=config.class_list, digits=4)
         confusion = metrics.confusion_matrix(labels_all, predict_all)

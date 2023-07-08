@@ -1,0 +1,13 @@
+PAD
+UNK
+O
+B-Drug
+I-Drug
+B-Drug_Category
+I-Drug_Category
+B-Medical_Examination
+I-Medical_Examination
+B-Operation
+I-Operation
+B-Symptom
+I-Symptom
