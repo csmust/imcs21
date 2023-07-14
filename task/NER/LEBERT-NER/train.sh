@@ -1,4 +1,4 @@
-DEVICE=1
+DEVICE=0
 DATA_SET='msra'
 MODEL_CLASS='lebert-softmax'
 LR=1e-5
@@ -29,8 +29,8 @@ python train.py \
     --dataset_name ${DATA_SET} \
     --model_class ${MODEL_CLASS} \
     --pretrain_model_path ${PRETRAIN_MODEL} \
-    --pretrain_embed_path pretrain_model/tencent-ailab-embedding-zh-d200-v0.2.0-s.txt \
-    --seed 42 \
+    --pretrain_embed_path /root/autodl-fs/imcs21/task/NER/LEBERT-NER/Downloads/tencent-ailab-embedding-zh-d200-v0.2.0-s/tencent-ailab-embedding-zh-d200-v0.2.0-s.txt \
+    --seed 6 \
     --markup bios \
     --grad_acc_step 1 \
     --max_grad_norm 1.0 \

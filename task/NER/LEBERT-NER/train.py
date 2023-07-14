@@ -47,7 +47,7 @@ def set_train_args():
     # parser.add_argument("--test_file", type=str, default="datasets/cner/test.txt")
     parser.add_argument("--dataset_name", type=str, choices=['resume', "weibo", 'ontonote4', 'msra', 'dialoimc'], default='resume', help='数据集名称')
     parser.add_argument("--model_class", type=str, choices=['lebert-softmax', 'bert-softmax', 'bert-crf', 'lebert-crf'],
-                        default='lebert-softmax', help='模型类别')
+                        default='lebert-crf', help='模型类别')
     parser.add_argument("--pretrain_model_path", type=str, default="pretrain_model/bert-base-chinese")
     parser.add_argument("--overwrite", action='store_true', default=True, help="覆盖数据处理的结果")
     parser.add_argument("--do_train", action='store_true', default=False)
@@ -129,22 +129,22 @@ def train(model, train_loader, dev_loader, test_loader, optimizer, scheduler, ar
         logger.info('start {}-th epoch training'.format(epoch + 1))
         for batch_idx, data in enumerate(tqdm(train_loader)):
             step = epoch * len(train_loader) + batch_idx + 1
-            input_ids = data['input_ids'].to(device)
-            token_type_ids = data['token_type_ids'].to(device)
-            attention_mask = data['attention_mask'].to(device)
-            label_ids = data['label_ids'].to(device)
+            input_ids = data['input_ids'].to(device)  #torch.Size([64, 128])
+            token_type_ids = data['token_type_ids'].to(device) #torch.Size([64, 128])
+            attention_mask = data['attention_mask'].to(device) #torch.Size([64, 128]) 1是真实的，0是padding的tensor([[1, 1, 1,  ..., 0, 0, 0],
+            label_ids = data['label_ids'].to(device)  #tensor([[1, 1, 1,  ..., 1, 1, 1],  torch.Size([64, 128])
             # 不同模型输入不同
             if args.model_class == 'bert-softmax':
                 loss, logits = model(input_ids, attention_mask, token_type_ids, args.ignore_index, label_ids)
             elif args.model_class == 'bert-crf':
                 loss, logits = model(input_ids, attention_mask, token_type_ids, label_ids)
             elif args.model_class == 'lebert-softmax':
-                word_ids = data['word_ids'].to(device)
-                word_mask = data['word_mask'].to(device)
+                word_ids = data['word_ids'].to(device)  #torch.Size([64, 128, 3])
+                word_mask = data['word_mask'].to(device) #torch.Size([64, 128, 3])
                 loss, logits = model(input_ids, attention_mask, token_type_ids, word_ids, word_mask, args.ignore_index, label_ids)
             elif args.model_class == 'lebert-crf':
                 word_ids = data['word_ids'].to(device)
-                word_mask = data['word_mask'].to(device)
+                word_mask = data['word_mask'].to(device) 
                 loss, logits = model(input_ids, attention_mask, token_type_ids, word_ids, word_mask, label_ids)
 
             loss = loss.mean()  # 对多卡的loss取平均
@@ -289,21 +289,21 @@ PROCESSOR_CLASS = {
 
 def main(args):
     # 分词器
-    tokenizer = BertTokenizer.from_pretrained(args.pretrain_model_path, do_lower_case=True)
+    tokenizer = BertTokenizer.from_pretrained(args.pretrain_model_path, do_lower_case=True)  
     # 数据处理器
     processor = PROCESSOR_CLASS[args.model_class](args, tokenizer)
-    args.id2label = processor.label_vocab.idx2token
-    args.ignore_index = processor.label_vocab.convert_token_to_id('[PAD]')
+    args.id2label = processor.label_vocab.idx2token #['[PAD]', 'O', 'B-Drug', 'B-Drug_Category', 'B-Medical_Examination', 'B-Operation', 'B-S
+    args.ignore_index = processor.label_vocab.convert_token_to_id('[PAD]') #0
     # 初始化模型配置
     config = BertConfig.from_pretrained(args.pretrain_model_path)
     config.num_labels = processor.label_vocab.size
-    config.loss_type = args.loss_type
+    config.loss_type = args.loss_type           #ce
     if args.model_class in ['lebert-softmax', 'lebert-crf']:
-        config.add_layer = args.add_layer
-        config.word_vocab_size = processor.word_embedding.shape[0]
-        config.word_embed_dim = processor.word_embedding.shape[1]
+        config.add_layer = args.add_layer # 在1层添加
+        config.word_vocab_size = processor.word_embedding.shape[0] # 词汇表大小
+        config.word_embed_dim = processor.word_embedding.shape[1] # 词向量维度
     # 初始化模型
-    model = MODEL_CLASS[args.model_class].from_pretrained(args.pretrain_model_path, config=config).to(args.device)
+    model = MODEL_CLASS[args.model_class].from_pretrained(args.pretrain_model_path, config=config).to(args.device)  
     # 初始化模型的词向量
     if args.model_class in ['lebert-softmax', 'lebert-crf'] and args.load_word_embed:
         logger.info('initialize word_embeddings with pretrained embedding')
@@ -312,7 +312,7 @@ def main(args):
     # 训练
     if args.do_train:
         # 加载数据集
-        train_dataset = processor.get_train_data()
+        train_dataset = processor.get_train_data()#<processors.dataset.NERDataset object
         # train_dataset = train_dataset[:8]
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size_train, shuffle=True,
                                       num_workers=args.num_workers)
@@ -377,4 +377,5 @@ if __name__ == '__main__':
         logger.add(join(args.output_path, 'train-{}.log'.format(cur_time)))
         logger.info(args)
         writer = SummaryWriter(args.output_path)
+
     main(args)

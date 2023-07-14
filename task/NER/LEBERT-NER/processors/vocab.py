@@ -1,7 +1,7 @@
 import os
 import json
 
-
+#processor调用
 class Vocabulary(object):
     """
     构建词表
@@ -22,8 +22,8 @@ class Vocabulary(object):
             tokens = ['[PAD]'] + tokens
         # self.tokens = tokens
 
-        for token in tokens:
-            self.token2idx[token] = self.size
+        for token in tokens:  #['[PAD]', '[UNK]', '!', '$', '%', '&', "'", '(', ')', '*', '+', ',', '-',…………………………………………
+            self.token2idx[token] = self.size   #self.size计数 从0开始
             self.idx2token.append(token)
             self.size += 1
 

@@ -17,7 +17,7 @@ class Trie:
     def __init__(self, use_single=True):
         self.root = TrieNode()
         self.max_depth = 0
-        if use_single:
+        if use_single:         #use_single=true
             self.min_len = 0
         else:
             self.min_len = 1
