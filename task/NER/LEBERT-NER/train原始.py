@@ -18,7 +18,6 @@ import transformers
 # from nervaluate import Evaluator
 from seqeval.metrics import precision_score, recall_score, f1_score
 # import sklearn
-from ..eval_ner import ner_eval
 
 
 def set_train_args():
@@ -136,14 +135,6 @@ def train(model, train_loader, dev_loader, test_loader, optimizer, scheduler, ar
             token_type_ids = data['token_type_ids'].to(device) #torch.Size([64, 128])
             attention_mask = data['attention_mask'].to(device) #torch.Size([64, 128]) 1是真实的，0是padding的tensor([[1, 1, 1,  ..., 0, 0, 0],
             label_ids = data['label_ids'].to(device)  #tensor([[1, 1, 1,  ..., 1, 1, 1],  torch.Size([64, 128])
-            intent_tensor = data['intent_ids'].flatten().to(device)
-            input_context_ids = data['input_context_ids'].to(device)
-            context_attention_mask = data['context_mask'].to(device)
-            token_type_ids_context = data['token_type_ids_context'].to(device)
-            context_word_ids = data['context_word_ids'].to(device)
-            context_word_mask = data['context_word_mask'].to(device)
-            
-
             # 不同模型输入不同
             if args.model_class == 'bert-softmax':
                 loss, logits = model(input_ids, attention_mask, token_type_ids, args.ignore_index, label_ids)
@@ -156,10 +147,9 @@ def train(model, train_loader, dev_loader, test_loader, optimizer, scheduler, ar
             elif args.model_class == 'lebert-crf':
                 word_ids = data['word_ids'].to(device)
                 word_mask = data['word_mask'].to(device) 
-                # loss, logits = model(input_ids, attention_mask, token_type_ids, word_ids, word_mask, label_ids)
-                slot_loss, slot_logits,intent_loss,intent_logits = model(input_ids, attention_mask, token_type_ids, word_ids, word_mask,input_context_ids,context_attention_mask,token_type_ids_context,context_word_ids ,context_word_mask,intent_tensor,label_ids)
-            
-            loss = (slot_loss+intent_loss).mean()  # 对多卡的loss取平均
+                loss, logits = model(input_ids, attention_mask, token_type_ids, word_ids, word_mask, label_ids)
+
+            loss = loss.mean()  # 对多卡的loss取平均
 
             # 梯度累积
             loss = loss / args.grad_acc_step
@@ -218,12 +208,6 @@ def evaluate(args, model, dataloader):
             token_type_ids = data['token_type_ids'].to(device)
             attention_mask = data['attention_mask'].to(device)
             label_ids = data['label_ids'].to(device)
-            intent_tensor = data['intent_ids'].to(device)
-            input_context_ids = data['input_context_ids'].to(device)
-            context_attention_mask = data['context_mask'].to(device)
-            token_type_ids_context = data['token_type_ids_context'].to(device)
-            context_word_ids = data['context_word_ids'].to(device)
-            context_word_mask = data['context_word_mask'].to(device)
             # 不同模型输入不同
             if args.model_class == 'bert-softmax':
                 loss, logits = model(input_ids, attention_mask, token_type_ids, args.ignore_index, label_ids)
@@ -237,22 +221,17 @@ def evaluate(args, model, dataloader):
             elif args.model_class == 'lebert-crf':
                 word_ids = data['word_ids'].to(device)
                 word_mask = data['word_mask'].to(device)
-                # loss, logits = model(input_ids, attention_mask, token_type_ids, word_ids, word_mask, label_ids)
-                #return (slot_loss), slot_logits , (intent_loss), intent_logits
-                slot_loss, slot_logits,intent_loss,intent_logits = model(input_ids, attention_mask, token_type_ids, word_ids, word_mask,input_context_ids,context_attention_mask,token_type_ids_context,context_word_ids ,context_word_mask,intent_tensor,label_ids)
-
-            loss = (slot_loss+intent_loss).mean()  # 对多卡的loss取平均
+                loss, logits = model(input_ids, attention_mask, token_type_ids, word_ids, word_mask, label_ids)
+            loss = loss.mean()  # 对多卡的loss取平均
             eval_loss += loss
 
             input_lens = (torch.sum(input_ids != 0, dim=-1) - 5).tolist()   # 减去padding的[CLS]与[SEP]
             if args.model_class in ['lebert-crf', 'bert-crf']:
-                preds = model.crf.decode(slot_logits, attention_mask).squeeze(0)
+                preds = model.crf.decode(logits, attention_mask).squeeze(0)
                 preds = preds[:, 4:].tolist()  # 减去padding的[CLS]  预测时候没算 CLS 医 生 ：
             else:
                 preds = torch.argmax(logits, dim=2)[:, 4:].tolist()  # 减去padding的[CLS]
-            pred_intent = torch.argmax(intent_logits, dim=1).tolist()
             label_ids = label_ids[:, 4:].tolist()   # 减去padding的[CLS]    标签也 没算 CLS 医 生 ：
-            intent_ids = intent_tensor.tolist()
             # preds = np.argmax(logits.cpu().numpy(), axis=2).tolist()
             # label_ids = label_ids.cpu().numpy().tolist()
             for i in range(len(label_ids)):

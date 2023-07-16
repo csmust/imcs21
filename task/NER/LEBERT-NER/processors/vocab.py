@@ -12,7 +12,7 @@ class Vocabulary(object):
         :param tokens:
         :param vocab_type:
         """
-        assert vocab_type in ['label', 'word', '']
+        assert vocab_type in ['label', 'word', 'intent','']
         self.token2idx = {}
         self.idx2token = []
         self.size = 0
@@ -21,6 +21,8 @@ class Vocabulary(object):
         elif vocab_type == 'label':
             tokens = ['[PAD]'] + tokens
         # self.tokens = tokens
+        elif vocab_type == 'intent':
+            pass
 
         for token in tokens:  #['[PAD]', '[UNK]', '!', '$', '%', '&', "'", '(', ')', '*', '+', ',', '-',…………………………………………
             self.token2idx[token] = self.size   #self.size计数 从0开始
@@ -44,3 +46,5 @@ class Vocabulary(object):
 
     def convert_ids_to_tokens(self, ids):
         return [self.convert_id_to_token(ids) for ids in ids]
+    
+    

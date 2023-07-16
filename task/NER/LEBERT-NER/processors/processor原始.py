@@ -84,14 +84,13 @@ class LEBertProcessor(Processor):
         self.test_file = args.test_file
         self.data_path = args.data_path  
         self.max_seq_len = args.max_seq_len    #128
-        self.max_context_len = self.max_seq_len *2 + 2 +1  # 2个句子的长度 + 2个sep + 1个cls
         self.max_word_num = args.max_word_num  #3
         self.overwrite = args.overwrite         #True
         self.output_path = args.output_path
         self.tokenizer = tokenizer
         data_files = [self.train_file, self.dev_file, self.test_file]
-        self.word_embedding, self.word_vocab, self.label_vocab, self.trie_tree,self.intent_vocab = self.init(
-            args.pretrain_embed_path, args.output_path,  args.max_scan_num, data_files, args.label_path, args.overwrite,args.intent_path  #args.max_scan_num=3000000取预训练词向量的前max_scan_num个构造字典树
+        self.word_embedding, self.word_vocab, self.label_vocab, self.trie_tree = self.init(
+            args.pretrain_embed_path, args.output_path,  args.max_scan_num, data_files, args.label_path, args.overwrite  #args.max_scan_num=3000000取预训练词向量的前max_scan_num个构造字典树
         )#args.pretrain_embed_path='/root/autodl-fs/imcs21/task/NER/LEBERT-NER/Downloads/tencent-ailab-embedding-zh-d200-v0.2.0-s/tencent-ailab-embedding-zh-d200-v0.2.0-s.txt'
 
     # def load_words_from_pretrain(self, word_embedding_path, save_path, overwrite):
@@ -117,7 +116,7 @@ class LEBertProcessor(Processor):
     #     logger.info('size of word list:{}'.format(len(word_list)))
     #     return word_list
 
-    def init(self, pretrain_embed_path, output_path,  max_scan_num, data_files, label_path, overwrite,intent_path):
+    def init(self, pretrain_embed_path, output_path,  max_scan_num, data_files, label_path, overwrite):
         word_embed_path = join(self.data_path, 'word_embedding.pkl') #'datasets/msra/word_embedding.pkl'
         word_vocab_path = join(self.data_path, 'word_vocab.pkl') #'datasets/msra/word_vocab.pkl'
         word_vocab_path_ = join(self.data_path, 'word_vocab.txt')
@@ -140,18 +139,11 @@ class LEBertProcessor(Processor):
         # 加载label
         labels = load_lines(label_path) #['O', 'B-Drug', 'B-Drug_Category', 'B-Medical_Examination', 'B-Operation', 'B-Symptom', 'I-Drug', 'I-Drug_Category', 'I-Medical_Examination', 'I-Operation', 'I-Symptom']
         label_vocab = Vocabulary(labels, vocab_type='label')#id2token列表 token2id字典 和长度的对象
-
-        # 加载intent
-        intents = load_lines(intent_path)
-        intent_vocab =Vocabulary(intents,vocab_type='intent')
-
-
-        return model_word_embedding, word_vocab, label_vocab, trie_tree ,intent_vocab
-
+        return model_word_embedding, word_vocab, label_vocab, trie_tree
 
     @classmethod
     def load_word_embedding(cls, word_embed_path, max_scan_num):
-        """@classmethod 是一个装饰器，用于声明一个类方法
+        """
         todo 存在许多单字的，考虑是否去掉
         加载前args.max_scan_num=3000000个词向量, 并且返回词表
         :return:
@@ -184,7 +176,7 @@ class LEBertProcessor(Processor):
 
     @classmethod
     def build_trie_tree(cls, word_list, save_path):
-        """@classmethod 是一个装饰器，用于声明一个类方法
+        """
         # todo 是否不将单字加入字典树中  后面 use_single=True，应该是加入了
         构建字典树
         :return:
@@ -288,7 +280,7 @@ class LEBertProcessor(Processor):
         #     char_index2words[i] = char_index2words[i][:self.max_word_num]
         return char_index2words
 
-    def get_input_data(self, file):#TODO 加入意图
+    def get_input_data(self, file):
         lines = load_lines(file)
         features = []
         cls_token_id = self.tokenizer.cls_token_id
@@ -301,17 +293,11 @@ class LEBertProcessor(Processor):
             data = json.loads(line) #{'text': ['医', '生', '：', '你', '好'], 'label': ['O', 'O', 'O', 'O', 'O']}
             text = data['text']
             labels = data['label']
-            intents = data['intent'] 
-            contexts_list = data['context']  # [["医", "生", "：", "有", "没", "什", "么", "过", "敏", "？"], ["患", "者", "：", "没", "有"]]
-            
             char_index2words = self.get_char2words(text) #[['医生'], ['医生', '生'], ['：'], ['你好'], ['你好', '好']]
-            char_index2words_contexts =[self.get_char2words(x[:self.max_seq_len]) for x in contexts_list]
+
             # 在开头与结尾分别添加[CLS]与[SEP]
             input_ids = [cls_token_id] + self.tokenizer.convert_tokens_to_ids(text) + [sep_token_id]
             label_ids = [o_label_id] + self.label_vocab.convert_tokens_to_ids(labels) + [o_label_id]
-            intent_ids = self.intent_vocab.convert_tokens_to_ids(intents)
-            context_ids = [self.tokenizer.convert_tokens_to_ids(x[:self.max_seq_len]) + [sep_token_id]  for x in contexts_list]
-            context_ids =[cls_token_id] + [i for item in context_ids for i in item] #将二维列表转化为一维列表
 
             word_ids_list = []
             word_pad_id = self.word_vocab.convert_token_to_id('[PAD]')#0
@@ -321,37 +307,17 @@ class LEBertProcessor(Processor):
                 word_pad_num = self.max_word_num - len(words)
                 word_ids = word_ids + [word_pad_id] * word_pad_num
                 word_ids_list.append(word_ids) #[[15547, 0, 0], [15547, 43389, 0], [59349, 0, 0], [10721, 0, 0], [10721, 24111, 0]]
-            context_ids_list = []
-            for context in char_index2words_contexts:
-                for words in context:
-                    words = words[:self.max_word_num]
-                    word_ids = self.word_vocab.convert_tokens_to_ids(words)
-                    word_pad_num = self.max_word_num - len(words)
-                    word_ids = word_ids + [word_pad_id] * word_pad_num
-                    context_ids_list.append(word_ids)
-                #一句话完事后，补[0,0,0] ,[sep]
-                context_ids_list += [[word_pad_id]*self.max_word_num]
-
-
             # 开头和结尾进行padding
             word_ids_list = [[word_pad_id]*self.max_word_num] + word_ids_list + [[word_pad_id]*self.max_word_num]
-            context_ids_list = [[word_pad_id]*self.max_word_num] + context_ids_list
+
             if len(input_ids) > self.max_seq_len:  #input_ids=[101, 1278, 4495, 8038, 872, 1962, 102]   self.max_seq_len=128 
                 input_ids = input_ids[: self.max_seq_len]
                 label_ids = label_ids[: self.max_seq_len]
                 word_ids_list = word_ids_list[: self.max_seq_len]
-            if len(context_ids) > self.max_context_len:
-                context_ids = context_ids[: self.max_context_len]
-                context_ids_list = context_ids_list[: self.max_context_len]
-                context_ids_list[-1] = context_ids_list[-1][:self.max_word_num]
-                context_ids[-1] = sep_token_id
-            
             input_mask = [1] * len(input_ids)  #[1, 1, 1, 1, 1, 1, 1]
-            context_mask = [1] * len(context_ids)
             token_type_ids = [0] * len(input_ids)
-            token_type_ids_context = [0] * len(context_ids)
             assert len(input_ids) == len(label_ids) == len(word_ids_list)
-            assert len(context_ids_list) == len(context_ids)
+
             # padding
             padding_length = self.max_seq_len - len(input_ids)
             input_ids += [pad_token_id] * padding_length #[101, 1278, 4495, 8038, 872, 1962, 102, 0, 0, 0, 0, 0, 0, 0, ...]
@@ -359,32 +325,18 @@ class LEBertProcessor(Processor):
             token_type_ids += [0] * padding_length
             label_ids += [pad_label_id] * padding_length #[1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, ...]
             word_ids_list += [[word_pad_id]*self.max_word_num] * padding_length  #补3个0  [[0, 0, 0], [15547, 0, 0], [15547, 43389, 0], [59349, 0, 0], [10721, 0, 0], ……
-            padding_context_length = self.max_context_len - len(context_ids)
-            context_ids += [pad_token_id] * padding_context_length
-            context_mask += [0] * padding_context_length
-            token_type_ids_context += [0] * padding_context_length
-            context_ids_list += [[word_pad_id]*self.max_word_num] * padding_context_length
 
-            text = ''.join(text) #将单个char列表连接成字符串
+            text = ''.join(text)#去掉空格  
             input_ids = torch.LongTensor(input_ids)
             label_ids = torch.LongTensor(label_ids)
             input_mask = torch.LongTensor(input_mask)
             token_type_ids = torch.LongTensor(token_type_ids)
             word_ids = torch.LongTensor(word_ids_list)
-            word_mask = (word_ids != word_pad_id).long()  #he input_mask有什么区别
-            intent_ids = torch.tensor(intent_ids)
-            input_context_ids = torch.LongTensor(context_ids)
-            context_mask = torch.LongTensor(context_mask)
-            token_type_ids_context = torch.LongTensor(token_type_ids_context)
-            context_word_ids = torch.LongTensor(context_ids_list)
-            context_word_mask = (context_word_ids != word_pad_id).long()
+            word_mask = (word_ids != word_pad_id).long()
 
             feature = {
                 'text': text, 'input_ids': input_ids, 'attention_mask': input_mask, 'token_type_ids': token_type_ids,
-                'word_ids': word_ids, 'word_mask': word_mask, 'label_ids': label_ids,
-                'intent_ids':intent_ids,
-                'input_context_ids':input_context_ids,'context_mask':context_mask,'token_type_ids_context':token_type_ids_context,
-                'context_word_ids':context_word_ids,'context_word_mask':context_word_mask
+                'word_ids': word_ids, 'word_mask': word_mask, 'label_ids': label_ids
             }
             features.append(feature)
 
