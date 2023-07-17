@@ -18,7 +18,9 @@ import transformers
 # from nervaluate import Evaluator
 from seqeval.metrics import precision_score, recall_score, f1_score
 # import sklearn
-from ..eval_ner import ner_eval
+# from ..eval_ner import ner_eval
+from sklearn import metrics
+import json
 
 
 def set_train_args():
@@ -31,7 +33,9 @@ def set_train_args():
     parser.add_argument('--loss_type', default='ce', type=str, choices=['lsr', 'focal', 'ce'], help='损失函数类型')
     parser.add_argument('--add_layer', default=1, type=str, help='在bert的第几层后面融入词汇信息')
     parser.add_argument("--lr", type=float, default=1e-5, help='Bert的学习率')
-    parser.add_argument("--crf_lr", default=1e-3, type=float, help="crf的学习率")
+    parser.add_argument("--crf_lr", default=1e-2, type=float, help="crf的学习率")
+    parser.add_argument("--lstm_lr", default=1e-3, type=float, help="自定义的lstm的学习率")
+    parser.add_argument("--myattention_lr", default=2e-2, type=float, help="自定义的注意力学习率")
     parser.add_argument("--adapter_lr", default=1e-3, type=float, help="crf的学习率")
     parser.add_argument("--weight_decay", default=0.01, type=float, help="Weight decay if we apply some.")
     parser.add_argument('--eps', default=1.0e-08, type=float, required=False, help='AdamW优化器的衰减率')
@@ -86,7 +90,6 @@ def seed_everything(seed=42):
 
 
 def get_optimizer(model, args, warmup_steps, t_total):
-    # todo 检查
     no_bert = ["word_embedding_adapter", "word_embeddings", "classifier",  "crf"]
     no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
@@ -115,6 +118,53 @@ def get_optimizer(model, args, warmup_steps, t_total):
             "weight_decay": args.weight_decay, "lr": args.adapter_lr
         }
     ]
+    # # todo 检查
+    # embedding = ["word_embedding_adapter", "word_embeddings"]
+    # no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
+    # crf = ["crf"]
+    # lstm = ["lstm.weight"]
+    # attention = ["unflatselfattention.weight","_conv.weight","newselfattention1.k.weight","newselfattention1.q.weight","newselfattention1.v.weight","newselfattention2.k.weight","newselfattention2.q.weight","newselfattention2.v.weight"]
+    # no_bert=embedding+crf+lstm+attention
+    # optimizer_grouped_parameters = [
+    #     # bert no_decay
+        
+    #     #第一个部分中的条件(not any(nd in n for nd in no_bert)检查参数的名称是否包含在no_bert列表中的任何一个元素中。如果参数名称不包含在no_bert列表中，则条件为真。
+    #     #另外，如果参数名称为bert.embeddings.word_embeddings.weight，则条件也为真。
+    #     #第二个部分中的条件any(nd in n for nd in no_decay)检查参数的名称是否包含在no_decay列表中的任何一个元素中。如果参数名称包含在no_decay列表中，则条件为真。
+    #     {
+    #         "params": [p for n, p in model.named_parameters()
+    #                    if (not any(nd in n for nd in no_bert) or n == 'bert.embeddings.word_embeddings.weight') and any(nd in n for nd in no_decay)],  # 
+    #         "weight_decay": 0.0, 'lr': args.lr
+    #     },
+    #     # bert decay
+    #     {
+    #         "params": [p for n, p in model.named_parameters()
+    #                    if (not any(nd in n for nd in no_bert) or n == 'bert.embeddings.word_embeddings.weight') and not any(nd in n for nd in no_decay)],
+    #         "weight_decay": args.weight_decay, 'lr': args.lr
+    #     },
+    #     # crf lr
+    #     {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in crf) and p.requires_grad],
+    #      'weight_decay': args.weight_decay,"lr":args.crf_lr},
+    #     # lstm lr
+    #     {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in lstm) and p.requires_grad],
+    #         'weight_decay': args.weight_decay,"lr":args.lstm_lr},
+    #     # attention lr
+    #     {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in attention) and p.requires_grad],
+    #         'weight_decay': args.weight_decay,"lr":args.myattention_lr},
+
+    #     # other no_decay
+    #     {
+    #         "params": [p for n, p in model.named_parameters()
+    #                    if any(nd in n for nd in embedding) and n != 'bert.embeddings.word_embeddings.weight' and any(nd in n for nd in no_decay)],
+    #         "weight_decay": 0.0, "lr": args.adapter_lr
+    #     },
+    #     # other decay
+    #     {
+    #         "params": [p for n, p in model.named_parameters() if
+    #                    any(nd in n for nd in embedding) and n != 'bert.embeddings.word_embeddings.weight' and not any(nd in n for nd in no_decay)],
+    #         "weight_decay": args.weight_decay, "lr": args.adapter_lr
+    #     }
+    # ]
     optimizer = transformers.AdamW(optimizer_grouped_parameters, lr=args.lr, eps=args.eps)
     scheduler = transformers.get_linear_schedule_with_warmup(
         optimizer, num_warmup_steps=warmup_steps, num_training_steps=t_total
@@ -131,6 +181,7 @@ def train(model, train_loader, dev_loader, test_loader, optimizer, scheduler, ar
     for epoch in range(args.epochs):
         logger.info('start {}-th epoch training'.format(epoch + 1))
         for batch_idx, data in enumerate(tqdm(train_loader)):
+            stime = time.time()
             step = epoch * len(train_loader) + batch_idx + 1
             input_ids = data['input_ids'].to(device)  #torch.Size([64, 128])
             token_type_ids = data['token_type_ids'].to(device) #torch.Size([64, 128])
@@ -159,7 +210,10 @@ def train(model, train_loader, dev_loader, test_loader, optimizer, scheduler, ar
                 # loss, logits = model(input_ids, attention_mask, token_type_ids, word_ids, word_mask, label_ids)
                 slot_loss, slot_logits,intent_loss,intent_logits = model(input_ids, attention_mask, token_type_ids, word_ids, word_mask,input_context_ids,context_attention_mask,token_type_ids_context,context_word_ids ,context_word_mask,intent_tensor,label_ids)
             
-            loss = (slot_loss+intent_loss).mean()  # 对多卡的loss取平均
+            # loss = (slot_loss+intent_loss).mean()  # 对多卡的loss取平均
+            slot_loss=slot_loss.mean()
+            intent_loss=intent_loss.mean()
+            loss=slot_loss+intent_loss
 
             # 梯度累积
             loss = loss / args.grad_acc_step
@@ -177,32 +231,72 @@ def train(model, train_loader, dev_loader, test_loader, optimizer, scheduler, ar
 
             # 评测验证集和测试集上的指标
             if step % args.eval_step == 0:
-                logger.info('evaluate dev set')
-                dev_result = evaluate(args, model, dev_loader)
-                logger.info('evaluate test set')
-                test_result = evaluate(args, model, test_loader)
-                writer.add_scalar('dev loss', dev_result['loss'], step)
-                writer.add_scalar('dev f1', dev_result['f1'], step)
-                writer.add_scalar('dev precision', dev_result['acc'], step)
-                writer.add_scalar('dev recall', dev_result['recall'], step)
+                
+                logger.info('train intent loss: {},in step {} epoch {}'.format(intent_loss.item(), step, epoch + 1))
+                logger.info('train slot loss: {},in step {} epoch {}'.format(slot_loss.item(), step, epoch + 1))
 
-                writer.add_scalar('test loss', test_result['loss'], step)
-                writer.add_scalar('test f1', test_result['f1'], step)
-                writer.add_scalar('test precision', test_result['acc'], step)
-                writer.add_scalar('test recall', test_result['recall'], step)
+                # print("validating...")
+                # logger.info('------evaluate 验证集------')
+                # dev_result = evaluate(args, model, dev_loader)
 
-                model.train()
-                if best < test_result['f1']:
-                    best = test_result['f1']
-                    dev = dev_result['f1']
-                    logger.info('higher f1 of testset is {}, dev is {} in step {} epoch {}'.format(best, dev, step, epoch+1))
+                # # logger.info('dev slot_loss: {}'.format(dev_result['slot_loss']))
+                # # logger.info('dev slot_f1: {}'.format(dev_result['slot_f1']))
+                # # logger.info('dev slot_precision: {}'.format(dev_result['slot_acc']))
+                # # logger.info('dev slot_recall: {}'.format(dev_result['slot_recall']))
+                # writer.add_scalar('dev slot_loss', dev_result['slot_loss'], step)
+                # writer.add_scalar('dev slot_f1', dev_result['slot_f1'], step)
+                # writer.add_scalar('dev slot_precision', dev_result['slot_acc'], step)
+                # writer.add_scalar('dev slot_recall', dev_result['slot_recall'], step)
+                # writer.add_scalar('dev intent_loss', dev_result['intent_loss'], step)
+                # writer.add_scalar('dev intent_f1', dev_result['intent_f1'], step)
+                # writer.add_scalar('dev intent_precision', dev_result['intent_precision'], step)
+                # writer.add_scalar('dev intent_recall', dev_result['intent_recall'], step)
+                # writer.add_scalar('dev intent_acc', dev_result['intent_acc'], step)
+                print("testing...")
+                logger.info('------evaluate 测试集------')
+                test_result = evaluate(args, model, test_loader, iftest=False)
+
+                # logger.info('test slot_loss: {}'.format(test_result['slot_loss']))
+                # logger.info('test slot_f1: {}'.format(test_result['slot_f1']))
+                # logger.info('test slot_precision: {}'.format(test_result['slot_acc']))
+                # logger.info('test slot_recall: {}'.format(test_result['slot_recall']))
+                writer.add_scalar('test slot_loss', test_result['slot_loss'], step)
+                writer.add_scalar('test slot_f1', test_result['slot_f1'], step)
+                writer.add_scalar('test slot_precision', test_result['slot_acc'], step)
+                writer.add_scalar('test slot_recall', test_result['slot_recall'], step)
+                writer.add_scalar('test intent_loss', test_result['intent_loss'], step)
+                writer.add_scalar('test intent_f1', test_result['intent_f1'], step)
+                writer.add_scalar('test intent_precision', test_result['intent_precision'], step)
+                writer.add_scalar('test intent_recall', test_result['intent_recall'], step)
+                writer.add_scalar('test intent_acc', test_result['intent_acc'], step)
+
+
+                
+    #             if best < test_result['overall_f1']:
+    #                 best = test_result['overall_f1']
+    #                 dev = dev_result['overall_f1']
+    #                 logger.info('higher f1 of testset is {}, dev is {} in step {} epoch {}'.format(best, dev, step, epoch+1))
+    #                 # save_path = join(args.output_path, 'checkpoint-{}'.format(step))
+    #                 model_to_save = model.module if hasattr(model, 'module') else model
+    #                 model_to_save.save_pretrained(args.output_path)
+    #             etime = time.time()
+    #             logger.info('step {} time cost: {}\n\n'.format(step , etime - stime))
+    #             model.train()
+    # logger.info('best f1 of test is {}, dev is {}'.format(best, dev))
+
+                if best < test_result['overall_f1']:
+                    best = test_result['overall_f1']
+                    logger.info('higher f1 of testset is {},in step {} epoch {}'.format(best, step, epoch+1))
                     # save_path = join(args.output_path, 'checkpoint-{}'.format(step))
                     model_to_save = model.module if hasattr(model, 'module') else model
                     model_to_save.save_pretrained(args.output_path)
-    logger.info('best f1 of test is {}, dev is {}'.format(best, dev))
+                etime = time.time()
+                logger.info('step {} time cost: {}\n\n'.format(step , etime - stime))
+                model.train()
+    logger.info('best f1 of test is {}'.format(best))
 
 
-def evaluate(args, model, dataloader):
+def evaluate(args, model, dataloader,iftest=False):
     model.eval()
     device = args.device
     metric = SeqEntityScore(args.id2label, markup=args.markup)
@@ -211,19 +305,34 @@ def evaluate(args, model, dataloader):
     # logger.info("  Num examples = {}".format(len(dataloader)))
     # logger.info("  Batch size = {}".format(args.batch_size_eval))
     eval_loss = 0.0  #
-    final_preds, final_labels = [], []
+    eval_slot_loss = 0.0
+    eval_intent_loss = 0.0
+    final_preds, final_labels = [], []    # 槽
+    predict_all = np.array([], dtype=int)  # 意图
+    labels_all = np.array([], dtype=int)  # 意图
+    
+    pred_slot_value,label_slot_value=[],[]  # 槽值 例如 [['Symptom-咳嗽','Symptom-感冒'],[第二个句子的],[第三个句子的…………]]
+    pred_intent_str,label_intent_str=[],[] # 意图字面值  例如[[], [] , []……………………]
+    predicts_overall=[]
+    goldens_overall=[]
+    text_overall=[]
+    output=[]
     with torch.no_grad():
         for data in tqdm(dataloader):
             input_ids = data['input_ids'].to(device)
             token_type_ids = data['token_type_ids'].to(device)
             attention_mask = data['attention_mask'].to(device)
             label_ids = data['label_ids'].to(device)
-            intent_tensor = data['intent_ids'].to(device)
+
+            intent_tensor = data['intent_ids'].flatten().to(device)
             input_context_ids = data['input_context_ids'].to(device)
             context_attention_mask = data['context_mask'].to(device)
             token_type_ids_context = data['token_type_ids_context'].to(device)
             context_word_ids = data['context_word_ids'].to(device)
             context_word_mask = data['context_word_mask'].to(device)
+            text = data['text']#['医生：你好，咳嗽是连声咳吗？有痰吗？有没流鼻涕，鼻塞？', '医生：咳嗽有几天了？']
+            text = [x[3:] for x in text] #['你好，咳嗽是连声咳吗？有痰吗？有没流鼻涕，鼻塞？', '咳嗽有几天了？']
+            text_overall.extend(text)
             # 不同模型输入不同
             if args.model_class == 'bert-softmax':
                 loss, logits = model(input_ids, attention_mask, token_type_ids, args.ignore_index, label_ids)
@@ -241,8 +350,13 @@ def evaluate(args, model, dataloader):
                 #return (slot_loss), slot_logits , (intent_loss), intent_logits
                 slot_loss, slot_logits,intent_loss,intent_logits = model(input_ids, attention_mask, token_type_ids, word_ids, word_mask,input_context_ids,context_attention_mask,token_type_ids_context,context_word_ids ,context_word_mask,intent_tensor,label_ids)
 
-            loss = (slot_loss+intent_loss).mean()  # 对多卡的loss取平均
+            slot_loss=slot_loss.mean()
+            intent_loss=intent_loss.mean()
+
+            loss=slot_loss+intent_loss
             eval_loss += loss
+            eval_slot_loss += slot_loss
+            eval_intent_loss += intent_loss
 
             input_lens = (torch.sum(input_ids != 0, dim=-1) - 5).tolist()   # 减去padding的[CLS]与[SEP]
             if args.model_class in ['lebert-crf', 'bert-crf']:
@@ -259,23 +373,65 @@ def evaluate(args, model, dataloader):
                 input_len = input_lens[i]
                 pred = preds[i][:input_len]
                 label = label_ids[i][:input_len]
-                metric.update(pred_paths=[pred], label_paths=[label])
+                label_entities,pre_entities=metric.update(pred_paths=[pred], label_paths=[label])  #return label_entities,pre_entities
                 final_preds.append([args.id2label[_] for _ in pred])
                 final_labels.append([args.id2label[_] for _ in label])
+                pred_slot_value.append([mf[0]+"-"+text[i][int(mf[1]):int(mf[2])+1] for mf in pre_entities])
+                label_slot_value.append([mf[0]+"-"+text[i][int(mf[1]):int(mf[2])+1] for mf in label_entities])
+
+            #意图评分
+            predic=torch.max(intent_logits.data, 1)[1].cpu().numpy() #array([10,  0])
+            labels=intent_tensor.data.cpu().numpy()  #array([13, 13])
+            labels_all = np.append(labels_all, labels) #将labels添加到labels_all中
+            predict_all = np.append(predict_all, predic) #将predic添加到predict_all中
+            assert len(labels) == len(predic)
+            for j in range(len(labels)):
+                pred_intent_str.append([args.id2intent[predic[j]]])  #[['Inform-Drug_Recommendation'], ['Inform-Etiology']]
+                label_intent_str.append([args.id2intent[labels[j]]])  #[['Inform-Drug_Recommendation'], ['Inform-Etiology']]
+
+
+
+
 
     logger.info("\n")
-    eval_loss = eval_loss / len(dataloader)
+    eval_slot_loss = eval_slot_loss / len(dataloader)
     eval_info, entity_info = metric.result()
     results = {f'{key}': value for key, value in eval_info.items()}
-    results['loss'] = eval_loss
-    logger.info("***** Eval results *****")
+    results['slot_loss'] = eval_slot_loss
+
+    logger.info("***** slot Eval results *****")
     info = "-".join([f' {key}: {value:.4f} ' for key, value in results.items()])
     logger.info(info)
-    logger.info("***** Entity results *****")
+
+    logger.info("***** slot Entity results(单独计算实体槽名) *****")
     for key in sorted(entity_info.keys()):
-        logger.info("******* %s results ********"%key)
+        logger.info("******* %s slot results ********"%key)
         info = "-".join([f' {key}: {value:.4f} ' for key, value in entity_info[key].items()])
         logger.info(info)
+
+
+    #意图评分
+    logger.info("***** intent Eval results *****")
+    p = metrics.precision_score(labels_all, predict_all, average='macro') #计算精确率
+    r = metrics.recall_score(labels_all, predict_all, average='macro') #计算召回率
+    f1 = metrics.f1_score(labels_all, predict_all, average='macro') #计算f1
+    acc = metrics.accuracy_score(labels_all, predict_all) #计算准确率
+    if iftest:
+        report = metrics.classification_report(labels_all, predict_all, target_names=args.id2intent, digits=4)
+        confusion = metrics.confusion_matrix(labels_all, predict_all)
+        # results['intent_report'] = report
+        # results['intent_confusion'] = confusion
+        logger.info("***** test intent report *****")
+        logger.info(report)
+        logger.info("***** test intent confusion *****")
+        logger.info(confusion)
+    results['intent_acc'] = acc
+    results['intent_f1'] = f1
+    results['intent_precision'] = p
+    results['intent_recall'] = r
+    results['intent_loss'] = eval_intent_loss / len(dataloader)
+    logger.info("intent acc: {:.4f} - intent f1: {:.4f} -  intent precision: {:.4f} - intent recall: {:.4f} - intent loss: {:.4f}".\
+                format(acc, f1, p, r,results['intent_loss']))
 
     # evaluator = Evaluator(final_labels, final_preds,
     #                       tags=['Symptom', 'Medical_Examination', 'Drug', 'Drug_Category', 'Operation'],
@@ -293,7 +449,72 @@ def evaluate(args, model, dataloader):
     except Exception as e:
         print(e)
 
+    #overall评分
+    logger.info("***** overall Eval results *****")
+    predicts_overall=[x+y for x,y in zip(pred_slot_value,pred_intent_str)]
+    goldens_overall=[x+y for x,y in zip(label_slot_value,label_intent_str)]
+    for i in range(len(predicts_overall)):
+        output.append({"text":text_overall[i],"predict":predicts_overall[i],"golden":goldens_overall[i]})
+    
+
+    overall_p, overall_r, overall_f1, overall_acc = calculateF1(output,iftest)
+    logger.info("overall acc: {:.4f} - overall f1: {:.4f} -  overall precision: {:.4f} - overall recall: {:.4f}".\
+                format(overall_acc, overall_f1, overall_p, overall_r))
+
+    results['overall_precision'] = overall_p
+    results['overall_recall'] = overall_r
+    results['overall_f1'] = overall_f1
+    results['overall_acc'] = overall_acc
+    if iftest:
+        #将output列表保存到json
+        with open('output.json', 'w', encoding='utf-8') as f:
+            json.dump(output, f, ensure_ascii=False, indent=4)
+
+
+    
+
     return results
+
+def calculateF1(output,iftest=False):
+    TP, FP, FN = 0, 0, 0
+    accnum=0
+    TP_pre=0
+    for item in output:
+        predicts = item['predict']
+        labels = item['golden']
+        # print("预测：\t",predicts)
+        # print("标签：\t",labels)
+        # print("---"*30)
+        for ele in predicts:
+            if ele in labels:
+                TP += 1
+            else:
+                #错了
+                FP += 1
+                if iftest:
+                    if item.get("FP") is None:
+                        item["FP"]=[ele]
+                    else :
+                        item["FP"].append(ele)
+        for ele in labels:
+            if ele not in predicts:
+                #漏了
+                FN += 1
+                if iftest:
+                    if item.get("FN") is None:
+                        item["FN"]=[ele]
+                    else :
+                        item["FN"].append(ele)
+        
+        if TP-TP_pre==len(predicts) and TP-TP_pre==len(labels):
+            accnum+=1  # 整句话的预测都对了
+        TP_pre=TP
+    acc=accnum/len(output)
+    # print(TP, FP, FN)
+    precision = 1.0 * TP / (TP + FP) if TP + FP else 0.
+    recall = 1.0 * TP / (TP + FN) if TP + FN else 0.
+    F1 = 2.0 * precision * recall / (precision + recall) if precision + recall else 0.
+    return precision, recall, F1, acc
 
 
 MODEL_CLASS = {
@@ -359,7 +580,7 @@ def main(args):
         optimizer, scheduler = get_optimizer(model, args, warmup_steps, t_total)
         train(model, train_dataloader, dev_dataloader, test_dataloader, optimizer, scheduler, args)
 
-    # 测试集上的指标
+    # 测试集上的指标 TODO
     if args.do_eval:
         # 加载验证集
         dev_dataset = processor.get_dev_data()
@@ -371,16 +592,16 @@ def main(args):
         # test_dataset = test_dataset[:4]
         test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size_eval, shuffle=False,
                                      num_workers=args.num_workers)
-        model = MODEL_CLASS[args.model_class].from_pretrained(args.output_path, config=config).to(args.device)
+        model = MODEL_CLASS[args.model_class].from_pretrained(args.output_path, intent_num_labels=intent_num_labels,use_context=args.use_context).to(args.device)
         model.eval()
-
+        logger.info("验证保存的模型，将输出结果保存到output.json")
         result = evaluate(args, model, dev_dataloader)
-        logger.info('devset precision:{}, recall:{}, f1:{}, loss:{}'.format(result['acc'], result['recall'], result['f1'], result['loss'].item()))
+        logger.info('devset slot_precision:{}, slot_recall:{}, slot_f1:{}, slot_loss:{}'.format(result['slot_acc'], result['slot_recall'], result['slot_f1'], result['slot_loss'].item()))
+        logger.info('devset intent_precision:{}, intent_recall:{},intent_acc:{}, intent_f1:{}, intent_loss:{}'.format(result['intent_precision'], result['intent_recall'],result["intent_acc"], result['intent_f1'], result['intent_loss'].item()))
         # 测试集上的指标
-        result = evaluate(args, model, test_dataloader)
-        logger.info(
-            'testset precision:{}, recall:{}, f1:{}, loss:{}'.format(result['acc'], result['recall'], result['f1'],
-                                                                     result['loss'].item()))
+        result = evaluate(args, model, test_dataloader,iftest=True)
+        logger.info('testset slot_precision:{}, slot_recall:{}, slot_f1:{}, slot_loss:{}'.format(result['slot_acc'], result['slot_recall'], result['slot_f1'], result['slot_loss'].item()))
+        logger.info('testset intent_precision:{}, intent_recall:{},intent_acc:{}, intent_f1:{}, intent_loss:{}'.format(result['intent_precision'], result['intent_recall'],result["intent_acc"], result['intent_f1'], result['intent_loss'].item()))
 
 
 if __name__ == '__main__':
@@ -391,6 +612,7 @@ if __name__ == '__main__':
 
     pretrain_model = 'mengzi' if 'mengzi' in args.pretrain_model_path else 'bert-base'
     args.output_path = join(args.output_path, args.dataset_name, args.model_class, pretrain_model, 'load_word_embed' if args.load_word_embed else 'not_load_word_embed')
+    print(args.output_path)
     args.train_file = join(args.data_path, 'train.json')
     args.dev_file = join(args.data_path, 'dev.json')
     args.test_file = join(args.data_path, 'test.json')
