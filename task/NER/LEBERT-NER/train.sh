@@ -40,4 +40,4 @@ python train.py \
     --warmup_proportion 0.1 \
     --load_word_embed \
     --do_eval \
-    # --do_train
+    --do_train

@@ -90,50 +90,13 @@ def seed_everything(seed=42):
 
 
 def get_optimizer(model, args, warmup_steps, t_total):
-    no_bert = ["word_embedding_adapter", "word_embeddings", "classifier",  "crf"]
-    no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
-    optimizer_grouped_parameters = [
-        # bert no_decay
-        {
-            "params": [p for n, p in model.named_parameters()
-                       if (not any(nd in n for nd in no_bert) or n == 'bert.embeddings.word_embeddings.weight') and any(nd in n for nd in no_decay)],
-            "weight_decay": 0.0, 'lr': args.lr
-        },
-        # bert decay
-        {
-            "params": [p for n, p in model.named_parameters()
-                       if (not any(nd in n for nd in no_bert) or n == 'bert.embeddings.word_embeddings.weight') and not any(nd in n for nd in no_decay)],
-            "weight_decay": args.weight_decay, 'lr': args.lr
-        },
-        # other no_decay
-        {
-            "params": [p for n, p in model.named_parameters()
-                       if any(nd in n for nd in no_bert) and n != 'bert.embeddings.word_embeddings.weight' and any(nd in n for nd in no_decay)],
-            "weight_decay": 0.0, "lr": args.adapter_lr
-        },
-        # other decay
-        {
-            "params": [p for n, p in model.named_parameters() if
-                       any(nd in n for nd in no_bert) and n != 'bert.embeddings.word_embeddings.weight' and not any(nd in n for nd in no_decay)],
-            "weight_decay": args.weight_decay, "lr": args.adapter_lr
-        }
-    ]
-    # # todo 检查
-    # embedding = ["word_embedding_adapter", "word_embeddings"]
+    # no_bert = ["word_embedding_adapter", "word_embeddings", "classifier",  "crf"]
     # no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
-    # crf = ["crf"]
-    # lstm = ["lstm.weight"]
-    # attention = ["unflatselfattention.weight","_conv.weight","newselfattention1.k.weight","newselfattention1.q.weight","newselfattention1.v.weight","newselfattention2.k.weight","newselfattention2.q.weight","newselfattention2.v.weight"]
-    # no_bert=embedding+crf+lstm+attention
     # optimizer_grouped_parameters = [
     #     # bert no_decay
-        
-    #     #第一个部分中的条件(not any(nd in n for nd in no_bert)检查参数的名称是否包含在no_bert列表中的任何一个元素中。如果参数名称不包含在no_bert列表中，则条件为真。
-    #     #另外，如果参数名称为bert.embeddings.word_embeddings.weight，则条件也为真。
-    #     #第二个部分中的条件any(nd in n for nd in no_decay)检查参数的名称是否包含在no_decay列表中的任何一个元素中。如果参数名称包含在no_decay列表中，则条件为真。
     #     {
     #         "params": [p for n, p in model.named_parameters()
-    #                    if (not any(nd in n for nd in no_bert) or n == 'bert.embeddings.word_embeddings.weight') and any(nd in n for nd in no_decay)],  # 
+    #                    if (not any(nd in n for nd in no_bert) or n == 'bert.embeddings.word_embeddings.weight') and any(nd in n for nd in no_decay)],
     #         "weight_decay": 0.0, 'lr': args.lr
     #     },
     #     # bert decay
@@ -142,29 +105,66 @@ def get_optimizer(model, args, warmup_steps, t_total):
     #                    if (not any(nd in n for nd in no_bert) or n == 'bert.embeddings.word_embeddings.weight') and not any(nd in n for nd in no_decay)],
     #         "weight_decay": args.weight_decay, 'lr': args.lr
     #     },
-    #     # crf lr
-    #     {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in crf) and p.requires_grad],
-    #      'weight_decay': args.weight_decay,"lr":args.crf_lr},
-    #     # lstm lr
-    #     {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in lstm) and p.requires_grad],
-    #         'weight_decay': args.weight_decay,"lr":args.lstm_lr},
-    #     # attention lr
-    #     {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in attention) and p.requires_grad],
-    #         'weight_decay': args.weight_decay,"lr":args.myattention_lr},
-
     #     # other no_decay
     #     {
     #         "params": [p for n, p in model.named_parameters()
-    #                    if any(nd in n for nd in embedding) and n != 'bert.embeddings.word_embeddings.weight' and any(nd in n for nd in no_decay)],
+    #                    if any(nd in n for nd in no_bert) and n != 'bert.embeddings.word_embeddings.weight' and any(nd in n for nd in no_decay)],
     #         "weight_decay": 0.0, "lr": args.adapter_lr
     #     },
     #     # other decay
     #     {
     #         "params": [p for n, p in model.named_parameters() if
-    #                    any(nd in n for nd in embedding) and n != 'bert.embeddings.word_embeddings.weight' and not any(nd in n for nd in no_decay)],
+    #                    any(nd in n for nd in no_bert) and n != 'bert.embeddings.word_embeddings.weight' and not any(nd in n for nd in no_decay)],
     #         "weight_decay": args.weight_decay, "lr": args.adapter_lr
     #     }
     # ]
+    # todo 检查
+    embedding = ["word_embedding_adapter", "word_embeddings"]
+    no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
+    crf = ["crf"]
+    lstm = ["lstm.weight"]
+    attention = ["unflatselfattention.weight","_conv.weight","newselfattention1.k.weight","newselfattention1.q.weight","newselfattention1.v.weight","newselfattention2.k.weight","newselfattention2.q.weight","newselfattention2.v.weight"]
+    no_bert=embedding+crf+lstm+attention
+    optimizer_grouped_parameters = [
+        # bert no_decay
+        
+        #第一个部分中的条件(not any(nd in n for nd in no_bert)检查参数的名称是否包含在no_bert列表中的任何一个元素中。如果参数名称不包含在no_bert列表中，则条件为真。
+        #另外，如果参数名称为bert.embeddings.word_embeddings.weight，则条件也为真。
+        #第二个部分中的条件any(nd in n for nd in no_decay)检查参数的名称是否包含在no_decay列表中的任何一个元素中。如果参数名称包含在no_decay列表中，则条件为真。
+        {
+            "params": [p for n, p in model.named_parameters()
+                       if (not any(nd in n for nd in no_bert) or n == 'bert.embeddings.word_embeddings.weight') and any(nd in n for nd in no_decay)],  # 
+            "weight_decay": 0.0, 'lr': args.lr
+        },
+        # bert decay
+        {
+            "params": [p for n, p in model.named_parameters()
+                       if (not any(nd in n for nd in no_bert) or n == 'bert.embeddings.word_embeddings.weight') and not any(nd in n for nd in no_decay)],
+            "weight_decay": args.weight_decay, 'lr': args.lr
+        },
+        # crf lr
+        {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in crf) and p.requires_grad],
+         'weight_decay': args.weight_decay,"lr":args.crf_lr},
+        # lstm lr
+        {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in lstm) and p.requires_grad],
+            'weight_decay': args.weight_decay,"lr":args.lstm_lr},
+        # attention lr
+        {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in attention) and p.requires_grad],
+            'weight_decay': args.weight_decay,"lr":args.myattention_lr},
+
+        # other no_decay
+        {
+            "params": [p for n, p in model.named_parameters()
+                       if any(nd in n for nd in embedding) and n != 'bert.embeddings.word_embeddings.weight' and any(nd in n for nd in no_decay)],
+            "weight_decay": 0.0, "lr": args.adapter_lr
+        },
+        # other decay
+        {
+            "params": [p for n, p in model.named_parameters() if
+                       any(nd in n for nd in embedding) and n != 'bert.embeddings.word_embeddings.weight' and not any(nd in n for nd in no_decay)],
+            "weight_decay": args.weight_decay, "lr": args.adapter_lr
+        }
+    ]
     optimizer = transformers.AdamW(optimizer_grouped_parameters, lr=args.lr, eps=args.eps)
     scheduler = transformers.get_linear_schedule_with_warmup(
         optimizer, num_warmup_steps=warmup_steps, num_training_steps=t_total
